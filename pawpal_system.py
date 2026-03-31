@@ -3,7 +3,7 @@ PawPal+ — backend logic layer.
 All classes representing the domain model and scheduling live here.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 
@@ -25,6 +25,7 @@ class Task:
 class ScheduledTask:
     """A Task that has been placed on the day's timeline."""
     task: Task
+    pet_name: str          # which pet this task is for
     start_time: str        # e.g. "08:00"
     end_time: str          # e.g. "08:20"
     reason: str = ""       # why this task was chosen / placed here

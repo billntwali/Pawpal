@@ -18,8 +18,13 @@ Relationships: `Owner` has one-to-many `Pet`; `Pet` has zero-to-many `Task`; `Sc
 
 **b. Design changes**
 
-- Did your design change during implementation?
-- If yes, describe at least one change and why you made it.
+After reviewing the skeleton, two issues were identified and fixed:
+
+1. **Added `pet_name: str` to `ScheduledTask`.**
+   The original design had no way to know which pet a scheduled task belonged to. Without this field, `explain_plan` could only say "Walk at 08:00" — it couldn't say "Walk *Mochi* at 08:00". This matters especially when an owner has multiple pets whose tasks get merged into a single timeline. Adding `pet_name` directly to `ScheduledTask` was the simplest fix: no extra lookup needed when generating the explanation.
+
+2. **Removed the unused `field` import from `dataclasses`.**
+   The original skeleton imported `field` from `dataclasses` but never used it. Removing it keeps the imports honest and avoids confusion during implementation.
 
 ---
 
