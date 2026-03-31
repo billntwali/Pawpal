@@ -52,13 +52,21 @@ This tradeoff is reasonable for this scenario because the app is a planning aid,
 
 **a. How you used AI**
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+AI tools were used at every stage, but with different intensities:
+
+- **Design (Phase 1):** Used AI to generate the initial Mermaid UML from a plain-English description of the four classes. The most effective prompt pattern was *"Here are the classes I need and their responsibilities — generate a class diagram showing relationships."* Providing the responsibility first (rather than just a name) produced much more accurate diagrams.
+- **Skeleton generation (Phase 1):** Asked AI to translate the UML into Python dataclasses and class stubs. The prompt *"Use Python dataclasses for Task and ScheduledTask, regular classes for Pet and Owner"* gave clean output that matched our architectural intent.
+- **Logic implementation (Phases 2–4):** Used AI in agent mode to implement `build_schedule`, sorting, filtering, recurring tasks, and conflict detection. The most helpful prompts were narrow and specific: *"How should Scheduler retrieve all tasks from all pets given that Owner.get_pets() returns a list?"* — concrete, scoped questions with a code reference produced better results than open-ended requests.
+- **Test generation (Phase 5):** Asked AI to suggest edge cases beyond happy-path scenarios. The prompt *"What edge cases should I test for a scheduler with recurring tasks and conflict detection?"* surfaced the empty-list, no-pets, and same-start-time cases that weren't immediately obvious.
+- **Debugging:** When a test failed, the most effective prompt pattern was to paste the exact error and ask *"Is the bug in the test or in the implementation?"* — this forced a diagnostic response rather than a blind rewrite.
 
 **b. Judgment and verification**
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+During conflict detection, the AI initially suggested using a `datetime` comparison that parsed both `start_time` and `end_time` strings into full `datetime` objects on every comparison. The logic was correct, but it was significantly more verbose than needed. Since our time values are already zero-padded `HH:MM` strings, they sort and compare correctly as plain strings — `"08:00" < "08:30"` is `True` in Python without any parsing.
+
+The AI suggestion was rejected in favour of the direct string comparison `a.start_time < b.end_time and b.start_time < a.end_time`. To verify this was safe, the edge cases in the test suite (same start time, back-to-back, overlapping) were run against both versions — they produced identical results. The simpler version was kept because it is easier to read, has no imports, and cannot fail on malformed datetime input.
+
+This was a good reminder that AI tends to reach for the most general tool (full datetime parsing) even when a simpler one is sufficient. The lead architect's job is to recognise when that generalisation adds complexity without adding value.
 
 ---
 
@@ -66,13 +74,25 @@ This tradeoff is reasonable for this scenario because the app is a planning aid,
 
 **a. What you tested**
 
-- What behaviors did you test?
-- Why were these tests important?
+The test suite covers 27 behaviours across five areas:
+
+| Area | Key behaviours verified |
+|------|------------------------|
+| Task lifecycle | `mark_complete()` changes status; one-off tasks return `None`; daily/weekly tasks return a correctly dated successor without mutating the original |
+| Pet management | `add_task()` grows the internal list; `get_tasks()` returns a defensive copy so external mutations don't corrupt state |
+| Owner management | `add_pet()` registers correctly; `remove_pet()` drops exactly the named pet and leaves others intact |
+| Scheduler core | Priority ordering (high before low, required before optional); time-window enforcement (tasks that exceed `day_end` are skipped); completed tasks are excluded from new schedules; owner with no pets and pet with no tasks produce no errors |
+| Algorithms | `sort_by_time` on unsorted and empty inputs; `filter_tasks` by pet name, completion status, and both combined; `complete_task` auto-spawns next occurrence for recurring tasks and does not for one-off tasks; `detect_conflicts` catches exact same-start-time, partial overlap, and correctly passes back-to-back and single-task inputs |
+
+These tests matter because the scheduler's output directly affects a pet's welfare. A bug in priority ordering or time-window enforcement could mean a feeding task gets skipped in favour of playtime — which is a real functional failure, not just a cosmetic one.
 
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+**4 / 5 stars.** All 27 tests pass cleanly. Confidence is high for the core scheduling logic and algorithmic methods. The remaining gap is input validation: the system does not guard against malformed `HH:MM` strings (e.g. `"25:99"`), negative `duration_minutes`, or an unknown `frequency` value. These could cause silent failures or confusing errors in production. Given more time, the next tests to add would be:
+
+1. `Task(duration_minutes=-5)` — should raise a `ValueError` or be rejected
+2. `Owner(day_start="invalid")` — should be caught at construction, not at schedule time
+3. A schedule where every task is skipped because all are too long — verify `explain_plan` handles an empty list gracefully (it does, but it's not explicitly tested)
 
 ---
 
@@ -80,12 +100,15 @@ This tradeoff is reasonable for this scenario because the app is a planning aid,
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+The cleanest part of the project is the separation between the logic layer (`pawpal_system.py`) and the UI layer (`app.py`). Because `Scheduler`, `Owner`, `Pet`, and `Task` know nothing about Streamlit, every method could be developed and tested in pure Python before touching the UI. This meant debugging was fast — a failing test pinpointed the exact method without needing to run the browser app. The `st.session_state` pattern for persisting the `Owner` object also worked well; once that pattern was established, adding new UI features (tabs, filters, mark-complete buttons) was straightforward.
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+Two things stand out:
+
+1. **Persistence across browser refreshes.** Currently all data lives in `st.session_state`, which is lost when the page is refreshed or the server restarts. A real version of this app would need a lightweight database (SQLite via `sqlite3` or a simple JSON file) to persist the owner's pets and tasks between sessions.
+2. **The `build_schedule` strategy.** The current greedy approach fills time slots in priority order and skips tasks that don't fit. This means a 60-minute walk at high priority can block a 5-minute feeding at medium priority from its preferred morning slot. A smarter approach would attempt to fit skipped tasks later in the day, or allow the owner to specify hard time anchors (e.g. "always feed at 07:30").
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+The most important lesson was about *staying the architect*. AI tools are extremely good at generating plausible code quickly, but "plausible" is not the same as "correct for this design." At several points the AI generated code that worked in isolation but violated the design — for example, adding logic directly to `Task.mark_complete()` that reached outside the class to update a pet's task list, coupling two objects that should be independent. Catching those violations required reading the generated code critically, not just running the tests. The tests passing is a necessary condition for correctness, but not a sufficient one — the code also needs to respect the boundaries the architecture established. Working with AI effectively means treating it as a fast junior developer: review everything, accept what fits, rewrite what doesn't.

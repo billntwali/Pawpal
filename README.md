@@ -22,6 +22,20 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Features
+
+- **Priority-based scheduling** — required tasks always come before optional ones; within each group, high → medium → low priority tasks are scheduled first
+- **Time-window enforcement** — the scheduler respects the owner's `day_start` / `day_end`; no task is ever truncated or allowed to run over
+- **Sorting by time** — any generated schedule can be re-displayed in chronological order using a `lambda` key on `HH:MM` strings
+- **Filtering** — browse tasks by pet name, completion status, or both combined
+- **Recurring tasks** — tasks marked `daily` or `weekly` automatically queue their next occurrence when marked complete, using `timedelta` to calculate the correct due date
+- **Conflict detection** — the scheduler scans every pair of scheduled tasks for overlapping time windows and surfaces human-readable warnings rather than crashing
+- **Mark complete in UI** — each scheduled task has a "Mark done" button; recurring tasks show a success message with the next due date
+
+## 📸 Demo
+
+<a href="/course_images/ai110/pawpal_screenshot.png" target="_blank"><img src='/course_images/ai110/pawpal_screenshot.png' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
+
 ## Smarter Scheduling
 
 PawPal+ goes beyond a simple task list with four algorithmic features:
