@@ -1,10 +1,11 @@
 """
-Basic tests for PawPal+ core logic.
-Run with: python -m pytest
+Tests for PawPal+ core logic.
+Run with: python3 -m pytest
 """
 
 import pytest
-from pawpal_system import Task, Pet, Owner, Scheduler
+from datetime import date, timedelta
+from pawpal_system import Task, Pet, Owner, Scheduler, ScheduledTask
 
 
 # ---------------------------------------------------------------------------
@@ -27,6 +28,35 @@ def test_mark_complete_is_idempotent():
     assert task.completed is True
 
 
+def test_mark_complete_once_returns_none():
+    """A one-off task should not spawn a successor."""
+    task = Task(title="Vet visit", duration_minutes=60, priority="high", frequency="once")
+    assert task.mark_complete() is None
+
+
+def test_mark_complete_daily_returns_next_task():
+    """A daily task should return a new Task due one day later."""
+    today = date.today()
+    task = Task(title="Feed", duration_minutes=10, priority="high",
+                frequency="daily", due_date=today)
+    next_task = task.mark_complete()
+    assert next_task is not None
+    assert next_task.completed is False
+    assert next_task.due_date == today + timedelta(days=1)
+    assert next_task.frequency == "daily"
+    assert next_task.title == task.title
+
+
+def test_mark_complete_weekly_returns_next_task():
+    """A weekly task should return a new Task due seven days later."""
+    today = date.today()
+    task = Task(title="Bath", duration_minutes=20, priority="medium",
+                frequency="weekly", due_date=today)
+    next_task = task.mark_complete()
+    assert next_task is not None
+    assert next_task.due_date == today + timedelta(weeks=1)
+
+
 # ---------------------------------------------------------------------------
 # Pet tests
 # ---------------------------------------------------------------------------
@@ -35,10 +65,8 @@ def test_add_task_increases_pet_task_count():
     """Each call to add_task() should grow the pet's task list by one."""
     pet = Pet(name="Mochi", species="dog", age=3)
     assert len(pet.get_tasks()) == 0
-
     pet.add_task(Task(title="Walk",  duration_minutes=20, priority="high"))
     assert len(pet.get_tasks()) == 1
-
     pet.add_task(Task(title="Feed",  duration_minutes=10, priority="medium"))
     assert len(pet.get_tasks()) == 2
 
@@ -76,18 +104,16 @@ def test_remove_pet_by_name():
 
 
 # ---------------------------------------------------------------------------
-# Scheduler tests
+# Scheduler — core
 # ---------------------------------------------------------------------------
 
 def test_schedule_respects_time_window():
     """No scheduled task should end after the owner's day_end."""
     owner = Owner(name="Jordan", day_start="08:00", day_end="08:20")
     pet   = Pet(name="Mochi", species="dog", age=3)
-    # 15-min task fits; 30-min task does not
     pet.add_task(Task(title="Feed",  duration_minutes=15, priority="high"))
     pet.add_task(Task(title="Walk",  duration_minutes=30, priority="high"))
     owner.add_pet(pet)
-
     schedule = Scheduler(owner).build_schedule()
     assert len(schedule) == 1
     assert schedule[0].task.title == "Feed"
@@ -100,6 +126,146 @@ def test_high_priority_scheduled_before_low():
     pet.add_task(Task(title="Nap",   duration_minutes=10, priority="low"))
     pet.add_task(Task(title="Walk",  duration_minutes=10, priority="high"))
     owner.add_pet(pet)
-
     schedule = Scheduler(owner).build_schedule()
     assert schedule[0].task.title == "Walk"
+
+
+def test_completed_tasks_excluded_from_schedule():
+    """Tasks already marked complete should not appear in build_schedule."""
+    owner = Owner(name="Jordan", day_start="08:00", day_end="20:00")
+    pet   = Pet(name="Mochi", species="dog", age=3)
+    done  = Task(title="Walk",  duration_minutes=20, priority="high", completed=True)
+    todo  = Task(title="Feed",  duration_minutes=10, priority="medium")
+    pet.add_task(done)
+    pet.add_task(todo)
+    owner.add_pet(pet)
+    schedule = Scheduler(owner).build_schedule()
+    titles = [st.task.title for st in schedule]
+    assert "Walk" not in titles
+    assert "Feed" in titles
+
+
+# ---------------------------------------------------------------------------
+# Scheduler — sort_by_time
+# ---------------------------------------------------------------------------
+
+def test_sort_by_time_orders_ascending():
+    """sort_by_time should reorder ScheduledTask objects by start_time."""
+    owner = Owner(name="Jordan")
+    sched = Scheduler(owner)
+    task  = Task(title="X", duration_minutes=5, priority="low")
+    slots = [
+        ScheduledTask(task=task, pet_name="A", start_time="10:00", end_time="10:05"),
+        ScheduledTask(task=task, pet_name="B", start_time="08:00", end_time="08:05"),
+        ScheduledTask(task=task, pet_name="C", start_time="09:00", end_time="09:05"),
+    ]
+    result = sched.sort_by_time(slots)
+    assert [s.start_time for s in result] == ["08:00", "09:00", "10:00"]
+
+
+# ---------------------------------------------------------------------------
+# Scheduler — filter_tasks
+# ---------------------------------------------------------------------------
+
+def test_filter_by_pet_name():
+    """filter_tasks(pet_name=...) should return only that pet's tasks."""
+    owner = Owner(name="Jordan", day_start="08:00", day_end="20:00")
+    mochi = Pet(name="Mochi", species="dog", age=3)
+    luna  = Pet(name="Luna",  species="cat", age=5)
+    mochi.add_task(Task(title="Walk", duration_minutes=20, priority="high"))
+    luna.add_task(Task(title="Feed",  duration_minutes=5,  priority="high"))
+    owner.add_pet(mochi)
+    owner.add_pet(luna)
+
+    results = Scheduler(owner).filter_tasks(pet_name="Mochi")
+    assert all(name == "Mochi" for name, _ in results)
+    assert len(results) == 1
+
+
+def test_filter_by_completion_status():
+    """filter_tasks(completed=False) should exclude completed tasks."""
+    owner = Owner(name="Jordan", day_start="08:00", day_end="20:00")
+    pet   = Pet(name="Mochi", species="dog", age=3)
+    done  = Task(title="Walk", duration_minutes=20, priority="high", completed=True)
+    todo  = Task(title="Feed", duration_minutes=10, priority="medium")
+    pet.add_task(done)
+    pet.add_task(todo)
+    owner.add_pet(pet)
+
+    results = Scheduler(owner).filter_tasks(completed=False)
+    titles = [t.title for _, t in results]
+    assert "Walk" not in titles
+    assert "Feed" in titles
+
+
+# ---------------------------------------------------------------------------
+# Scheduler — complete_task (recurring)
+# ---------------------------------------------------------------------------
+
+def test_complete_task_recurring_adds_to_pet():
+    """complete_task on a daily task should append a new task to the pet."""
+    owner = Owner(name="Jordan", day_start="08:00", day_end="20:00")
+    pet   = Pet(name="Mochi", species="dog", age=3)
+    task  = Task(title="Feed", duration_minutes=10, priority="high", frequency="daily")
+    pet.add_task(task)
+    owner.add_pet(pet)
+
+    initial_count = len(pet.get_tasks())
+    Scheduler(owner).complete_task(pet, task)
+    assert len(pet.get_tasks()) == initial_count + 1
+    assert pet.get_tasks()[-1].completed is False
+
+
+def test_complete_task_once_does_not_add():
+    """complete_task on a one-off task should NOT append a new task."""
+    owner = Owner(name="Jordan", day_start="08:00", day_end="20:00")
+    pet   = Pet(name="Mochi", species="dog", age=3)
+    task  = Task(title="Vet visit", duration_minutes=60, priority="high", frequency="once")
+    pet.add_task(task)
+    owner.add_pet(pet)
+
+    initial_count = len(pet.get_tasks())
+    Scheduler(owner).complete_task(pet, task)
+    assert len(pet.get_tasks()) == initial_count
+
+
+# ---------------------------------------------------------------------------
+# Scheduler — detect_conflicts
+# ---------------------------------------------------------------------------
+
+def test_detect_conflicts_finds_overlap():
+    """Two overlapping time slots should produce a warning."""
+    owner = Owner(name="Jordan")
+    sched = Scheduler(owner)
+    task  = Task(title="X", duration_minutes=10, priority="high")
+    slots = [
+        ScheduledTask(task=task, pet_name="A", start_time="08:00", end_time="08:30"),
+        ScheduledTask(task=task, pet_name="B", start_time="08:15", end_time="08:25"),
+    ]
+    warnings = sched.detect_conflicts(slots)
+    assert len(warnings) == 1
+    assert "WARNING" in warnings[0]
+
+
+def test_detect_conflicts_no_overlap():
+    """Back-to-back (non-overlapping) tasks should produce no warnings."""
+    owner = Owner(name="Jordan")
+    sched = Scheduler(owner)
+    task  = Task(title="X", duration_minutes=10, priority="high")
+    slots = [
+        ScheduledTask(task=task, pet_name="A", start_time="08:00", end_time="08:30"),
+        ScheduledTask(task=task, pet_name="B", start_time="08:30", end_time="08:40"),
+    ]
+    assert sched.detect_conflicts(slots) == []
+
+
+def test_detect_conflicts_clean_auto_schedule():
+    """The auto-generated schedule should never have conflicts."""
+    owner = Owner(name="Jordan", day_start="08:00", day_end="20:00")
+    pet   = Pet(name="Mochi", species="dog", age=3)
+    pet.add_task(Task(title="Walk", duration_minutes=20, priority="high"))
+    pet.add_task(Task(title="Feed", duration_minutes=10, priority="medium"))
+    owner.add_pet(pet)
+    sched    = Scheduler(owner)
+    schedule = sched.build_schedule()
+    assert sched.detect_conflicts(schedule) == []

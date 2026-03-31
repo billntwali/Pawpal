@@ -32,13 +32,19 @@ After reviewing the skeleton, two issues were identified and fixed:
 
 **a. Constraints and priorities**
 
-- What constraints does your scheduler consider (for example: time, priority, preferences)?
-- How did you decide which constraints mattered most?
+The scheduler considers three constraints, in order of importance:
+
+1. **Required vs optional** — required tasks are always scheduled before optional ones, regardless of priority. A pet must be fed even if a playtime session would rank higher by priority alone.
+2. **Priority level** (high → medium → low) — within each required/optional bucket, high-priority tasks get the earliest slots.
+3. **Available time window** (owner's `day_start` / `day_end`) — tasks that would push past `day_end` are skipped rather than truncated, so no task ever runs over the owner's available hours.
+
+Required tasks were ranked first because missing them (feeding, medication) has real welfare consequences, while missing optional tasks (playtime, grooming) is merely inconvenient.
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+The conflict detector checks for *exact time-window overlap* (`A.start < B.end AND B.start < A.end`) rather than accounting for gaps between tasks. This means two tasks scheduled back-to-back with zero minutes between them — say, a 30-minute walk ending at 08:30 followed immediately by a 10-minute feeding at 08:30 — are treated as conflict-free even though a real owner would need at least a moment to transition between them.
+
+This tradeoff is reasonable for this scenario because the app is a planning aid, not a rigid timer. A small gap between tasks is a natural human behaviour that doesn't need to be modelled explicitly at this stage. If PawPal+ were extended to handle professional pet-sitters managing many pets on tight schedules, adding a configurable "buffer time" between tasks would be the right next step. For a single busy owner, exact-overlap detection is sufficient to catch real mistakes (like accidentally double-booking the same time slot for two pets) without producing false warnings on normal back-to-back scheduling.
 
 ---
 
