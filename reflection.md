@@ -4,8 +4,17 @@
 
 **a. Initial design**
 
-- Briefly describe your initial UML design.
-- What classes did you include, and what responsibilities did you assign to each?
+The initial UML contains five classes across two layers — two plain classes and three dataclasses.
+
+| Class | Type | Responsibility |
+|-------|------|----------------|
+| `Task` | dataclass | Holds a single care activity: its title, how long it takes, priority level, optional preferred time of day, and whether it is required. Pure data — no behaviour. |
+| `ScheduledTask` | dataclass | Wraps a `Task` once it has been placed on the timeline, adding a start time, end time, and a human-readable reason explaining why it was chosen. |
+| `Pet` | class | Stores a pet's profile (name, species, age, breed, special needs) and owns a collection of `Task` objects. Responsible for managing the list of tasks that belong to that pet. |
+| `Owner` | class | Stores the owner's profile and their daily availability window (day_start / day_end). Owns a collection of `Pet` objects and is the single entry point for adding or removing pets. |
+| `Scheduler` | class | Contains the scheduling intelligence. Given an `Owner` (and through it, all pets and tasks), it prioritises tasks (high → medium → low), fits them into the available time window, and produces an ordered list of `ScheduledTask` objects along with a plain-English explanation. |
+
+Relationships: `Owner` has one-to-many `Pet`; `Pet` has zero-to-many `Task`; `Scheduler` takes one `Owner` and produces zero-to-many `ScheduledTask`, each of which wraps exactly one `Task`.
 
 **b. Design changes**
 
