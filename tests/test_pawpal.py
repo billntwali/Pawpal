@@ -146,6 +146,39 @@ def test_completed_tasks_excluded_from_schedule():
 
 
 # ---------------------------------------------------------------------------
+# Scheduler — edge cases
+# ---------------------------------------------------------------------------
+
+def test_schedule_owner_with_no_pets():
+    """An owner with no pets should produce an empty schedule without error."""
+    owner = Owner(name="Jordan", day_start="08:00", day_end="20:00")
+    assert Scheduler(owner).build_schedule() == []
+
+
+def test_schedule_pet_with_no_tasks():
+    """A pet with no tasks should not cause errors; other pets still schedule."""
+    owner = Owner(name="Jordan", day_start="08:00", day_end="20:00")
+    empty = Pet(name="Ghost", species="cat", age=2)          # no tasks
+    mochi = Pet(name="Mochi", species="dog", age=3)
+    mochi.add_task(Task(title="Walk", duration_minutes=20, priority="high"))
+    owner.add_pet(empty)
+    owner.add_pet(mochi)
+    schedule = Scheduler(owner).build_schedule()
+    assert len(schedule) == 1
+    assert schedule[0].pet_name == "Mochi"
+
+
+def test_schedule_all_tasks_already_done():
+    """When every task is completed, build_schedule should return an empty list."""
+    owner = Owner(name="Jordan", day_start="08:00", day_end="20:00")
+    pet   = Pet(name="Mochi", species="dog", age=3)
+    pet.add_task(Task(title="Walk", duration_minutes=20, priority="high", completed=True))
+    pet.add_task(Task(title="Feed", duration_minutes=10, priority="medium", completed=True))
+    owner.add_pet(pet)
+    assert Scheduler(owner).build_schedule() == []
+
+
+# ---------------------------------------------------------------------------
 # Scheduler — sort_by_time
 # ---------------------------------------------------------------------------
 
@@ -161,6 +194,12 @@ def test_sort_by_time_orders_ascending():
     ]
     result = sched.sort_by_time(slots)
     assert [s.start_time for s in result] == ["08:00", "09:00", "10:00"]
+
+
+def test_sort_by_time_empty_list():
+    """sort_by_time on an empty list should return an empty list without error."""
+    owner = Owner(name="Jordan")
+    assert Scheduler(owner).sort_by_time([]) == []
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +235,24 @@ def test_filter_by_completion_status():
     titles = [t.title for _, t in results]
     assert "Walk" not in titles
     assert "Feed" in titles
+
+
+def test_filter_combined_pet_and_status():
+    """filter_tasks with both pet_name and completed should apply both filters."""
+    owner = Owner(name="Jordan", day_start="08:00", day_end="20:00")
+    mochi = Pet(name="Mochi", species="dog", age=3)
+    luna  = Pet(name="Luna",  species="cat", age=5)
+    mochi.add_task(Task(title="Walk", duration_minutes=20, priority="high", completed=True))
+    mochi.add_task(Task(title="Feed", duration_minutes=10, priority="medium"))
+    luna.add_task(Task(title="Feed",  duration_minutes=5,  priority="high"))
+    owner.add_pet(mochi)
+    owner.add_pet(luna)
+
+    # Only Mochi's incomplete tasks
+    results = Scheduler(owner).filter_tasks(pet_name="Mochi", completed=False)
+    assert len(results) == 1
+    assert results[0][1].title == "Feed"
+    assert all(name == "Mochi" for name, _ in results)
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +313,28 @@ def test_detect_conflicts_no_overlap():
         ScheduledTask(task=task, pet_name="A", start_time="08:00", end_time="08:30"),
         ScheduledTask(task=task, pet_name="B", start_time="08:30", end_time="08:40"),
     ]
+    assert sched.detect_conflicts(slots) == []
+
+
+def test_detect_conflicts_exact_same_start_time():
+    """Two tasks starting at the same time are an overlap and must be flagged."""
+    owner = Owner(name="Jordan")
+    sched = Scheduler(owner)
+    task  = Task(title="X", duration_minutes=10, priority="high")
+    slots = [
+        ScheduledTask(task=task, pet_name="A", start_time="08:00", end_time="08:10"),
+        ScheduledTask(task=task, pet_name="B", start_time="08:00", end_time="08:10"),
+    ]
+    warnings = sched.detect_conflicts(slots)
+    assert len(warnings) == 1
+
+
+def test_detect_conflicts_single_task():
+    """A schedule with one task has no pairs to compare; no warnings expected."""
+    owner = Owner(name="Jordan")
+    sched = Scheduler(owner)
+    task  = Task(title="X", duration_minutes=10, priority="high")
+    slots = [ScheduledTask(task=task, pet_name="A", start_time="08:00", end_time="08:10")]
     assert sched.detect_conflicts(slots) == []
 
 

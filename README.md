@@ -33,6 +33,27 @@ PawPal+ goes beyond a simple task list with four algorithmic features:
 | **Recurring tasks** | `Task` has a `frequency` field (`"once"`, `"daily"`, `"weekly"`). Calling `Scheduler.complete_task(pet, task)` marks it done and, if recurring, automatically appends the next occurrence (via `timedelta`) to the pet's task list. |
 | **Conflict detection** | `Scheduler.detect_conflicts(schedule)` checks every pair of scheduled tasks for overlapping time windows and returns human-readable warnings rather than crashing. |
 
+## Testing PawPal+
+
+Run the full test suite from the project root:
+
+```bash
+python3 -m pytest
+```
+
+The suite contains **27 tests** across five areas:
+
+| Area | What is tested |
+|------|---------------|
+| **Task lifecycle** | `mark_complete()` flips status; one-off tasks return `None`; daily/weekly tasks return a correctly dated successor |
+| **Pet management** | `add_task()` grows the list; `get_tasks()` returns a copy so callers can't corrupt internal state |
+| **Owner management** | `add_pet()` / `remove_pet()` add and drop by name correctly |
+| **Scheduler — core** | Priority ordering, time-window enforcement, exclusion of completed tasks, empty-pet and no-pet edge cases |
+| **Algorithms** | Sorting by time (including empty list); filtering by pet name, status, and both combined; recurring-task auto-spawn; conflict detection for overlapping, back-to-back, same-start, single-task, and clean auto-generated schedules |
+
+**Confidence level: ★★★★☆ (4/5)**
+All 27 tests pass with zero warnings. The main untested gap is invalid input (e.g. malformed `HH:MM` strings or negative durations) — those are the next edge cases to cover.
+
 ## Getting started
 
 ### Setup
